@@ -40,13 +40,23 @@ This repo is built based on [mmdetection](https://github.com/open-mmlab/mmdetect
 
 You can use following commands to create conda env with related dependencies.
 ```
-conda create -n oln python=3.7 -y
+conda create -n oln python=3.8 -y
 conda activate oln
-conda install pytorch=1.7.0 torchvision cudatoolkit=11.0 -c pytorch -y
-pip install mmcv-full==1.2.7
+conda install pytorch==1.12.1 torchvision==0.13.1 cudatoolkit=11.6 -c pytorch -c conda-forge
+pip install mmcv-full==1.7.0 -f https://download.openmmlab.com/mmcv/dist/cu116/torch1.12/index.html
 pip install -r requirements.txt
 pip install -v -e . 
 ```
+
+**Note:** `pip install -r requirements.txt` and `pip install -v -e . ` will probably fail because of the package `mmvm`. Using `mim` instead of `pip` to install `mmvm` seewms to fix the issue. If the above installation commands fail for this reason, run the following commands:
+
+```
+pip install -U openmim
+mim install mmcv-full==1.7.0
+pip install -r requirements.txt
+pip install -v -e . 
+```
+
 Please also refer to [get_started.md](docs/get_started.md) for more details of installation.
 
 
