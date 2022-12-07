@@ -8,6 +8,8 @@ from torchvision.models import resnet50
 from torchvision.models import ResNet50_Weights
 from torchvision.transforms.functional import to_pil_image
 import torch
+import matplotlib.pyplot as plt
+import datetime as dt
 
 
 def make_dir(path, overwrite):
@@ -33,6 +35,8 @@ def classify_bbox(img_list, model, proproc, class_list):
     class_id = pred.argmax(dim=-1)
     # score = pred[class_id].item()]
     class_name = class_list[class_id]
+    if type(class_name) == np.str_:
+        class_name = np.array([class_name])
 
     return class_id, class_name
 
@@ -140,6 +144,7 @@ def extract_bboxes(
 
     fps = video.fps
     num_frames = len(video)
+
     if max_frames == None:
         max_frames = num_frames
 
@@ -156,12 +161,15 @@ def extract_bboxes(
         csv_writer.writeheader()
         
         for frame_idx in frame_indices:
-            print(f'{os.path.basename(video_fp)} frame {frame_idx}/{len(video)}')
+            print(f'{os.path.basename(video_fp)} frame {frame_idx}/{num_frames}')
             
             frame = video[frame_idx]
+            if frame is None: # sometimes the mmcv video reader messes up and returns one of the final few frames as None
+                continue
+
             result, bboxes, labels, scores = predict_bboxes(object_detector, frame, score_thresh)
             
-            if len(labels) == 0: # no objects detected
+            if len(bboxes) == 0: # no objects detected
                 write_bbox_to_file(csv_writer, frame_idx, -np.ones((5,)), -1, -1, -1, -1)
             else:
                 # get image crops of each bounding box
@@ -171,8 +179,11 @@ def extract_bboxes(
                 pil_patches = [to_pil_image(patch) for patch in patches]
                 imgnet_class_ids, imgnet_class_names = classify_bbox(pil_patches, bbox_classifier, classifier_preproc, imgnet_class_list)
 
+                # print(imgnet_class_names.shape)
+                # if 'p' in imgnet_class_names:
+                #     print(bboxes, labels, scores, imgnet_class_names)
                 # write results to file
-                for patch, bbox, coco_label, coco_score, imgnet_label in zip(patches, bboxes, labels, scores, imgnet_class_names):
+                for bbox, coco_label, coco_score, imgnet_label in zip(bboxes, labels, scores, imgnet_class_names):
                     write_bbox_to_file(
                         csv_writer,
                         frame_idx,
@@ -187,6 +198,7 @@ def extract_bboxes(
                 object_detector.show_result(frame, result, score_thr=score_thresh, out_file=os.path.join(bbox_img_dir, f'frame_{frame_idx}.jpg'))
 
 
+start_time = dt.datetime.now()
 
 video_dir = '../data/hdvila/videos/test_videos'
 bbox_csv_dir = '../data/hdvila/videos/bboxes'
@@ -219,8 +231,12 @@ for vfp in video_fps:
         classifier_preproc,
         score_thresh=0.1,
         bbox_img_dir='',
-        max_frames=50,
+        max_frames=100,
         sec_between_frames=2,
         sec_start_time=0
     )
     print()
+
+end_time = dt.datetime.now()
+with open(os.path.join(bbox_csv_dir, 'time.txt'), 'w') as time_file:
+    time_file.write(f'total seconds: {(end_time - start_time).seconds / 3600}' + '\n')
