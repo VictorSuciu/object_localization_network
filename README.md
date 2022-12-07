@@ -1,3 +1,27 @@
+# Fork of "Learning Open-World Object Proposals without Learning to Classify"
+
+## Installation
+
+This repo is built based on [mmdetection](https://github.com/open-mmlab/mmdetection). 
+
+You can use following commands to create conda env with related dependencies.
+```
+conda create -n oln python=3.8 -y
+conda activate oln
+conda install pytorch==1.12.1 torchvision==0.13.1 cudatoolkit=11.6 -c pytorch -c conda-forge
+pip install mmcv-full==1.7.0 -f https://download.openmmlab.com/mmcv/dist/cu116/torch1.12/index.html
+pip install -r requirements.txt
+pip install -v -e . 
+```
+
+## Relevant files
+
+`test_videonet_pipeline.py` is the main that runs the current videonet file. Usage: `python test_videonet_pipeline.py`. Currently file paths are hard-coded.
+
+`download_yt.py` downloads youtube vieos. Usage: `python download_yt.py path/to/url_file.txt path/to/video_folder/`. The url_file should contain youtube video urls with exactly one url per line.
+
+
+# Original README
 
 # Learning Open-World Object Proposals without Learning to Classify
 
@@ -44,15 +68,6 @@ conda create -n oln python=3.8 -y
 conda activate oln
 conda install pytorch==1.12.1 torchvision==0.13.1 cudatoolkit=11.6 -c pytorch -c conda-forge
 pip install mmcv-full==1.7.0 -f https://download.openmmlab.com/mmcv/dist/cu116/torch1.12/index.html
-pip install -r requirements.txt
-pip install -v -e . 
-```
-
-**Note:** `pip install -r requirements.txt` and `pip install -v -e . ` will probably fail because of the package `mmvm`. Using `mim` instead of `pip` to install `mmvm` seewms to fix the issue. If the above installation commands fail for this reason, run the following commands:
-
-```
-pip install -U openmim
-mim install mmcv-full==1.7.0
 pip install -r requirements.txt
 pip install -v -e . 
 ```
