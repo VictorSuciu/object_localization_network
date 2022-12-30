@@ -4,12 +4,12 @@ import os
 import csv
 import shutil
 import numpy as np
-from torchvision.models import resnet50
-from torchvision.models import ResNet50_Weights
+from torchvision.models import resnet50, ResNet50_Weights, resnet152, ResNet152_Weights
 from torchvision.transforms.functional import to_pil_image
 import torch
 import matplotlib.pyplot as plt
 import datetime as dt
+import cv2
 
 
 def make_dir(path, overwrite):
@@ -22,15 +22,22 @@ def make_dir(path, overwrite):
         os.mkdir(path)
 
 
-def classify_bbox(img_list, model, proproc, class_list):
+def classify_bbox(img_list, model, preproc, class_list):
     """
     img:        PIL Image - image to classify
     model:      pytorch pretrained imagenet classifier
     preproc:    pytorch pretrained imagenet classifier preprocessing pipeline
     model_meta: pytorch pretrained imagenet classifier weights/metadata
     """
+
+    for i, img in enumerate(img_list):
+        print(i + 2, img.size)
+        img.save(f'/home/vsuciu/data/tmp_imagenet_preproc_vis/{i+2}.png')
+
     # https://pytorch.org/vision/stable/models.html
-    preproc_img = torch.cat([proproc(img).unsqueeze(0) for img in img_list], dim=0)
+    preproc_img = torch.cat([preproc(img).unsqueeze(0) for img in img_list], dim=0)
+    
+    
     pred = model(preproc_img).squeeze(0).softmax(0)
     class_id = pred.argmax(dim=-1)
     # score = pred[class_id].item()]
@@ -72,9 +79,11 @@ def write_bbox_to_file(csv_writer, frame_idx, bbox, coco_label, coco_score, imgn
     csv_writer.writerow({
         'frame_idx': frame_idx,
         'x1': bbox[0],
-        'x2': bbox[1],
-        'y1': bbox[2],
+        'y1': bbox[1],
+        'x2': bbox[2],
         'y2': bbox[3],
+        'width': bbox[2] - bbox[0] if bbox[0] >= 0 else -1,
+        'height': bbox[3] - bbox[1] if bbox[0] >= 0 else -1,
         'coco_label': coco_label,
         'coco_label_score': coco_score,
         'imagenet_label': imgnet_label,
@@ -156,7 +165,7 @@ def extract_bboxes(
         
         csv_writer = csv.DictWriter(
             bbox_file,
-            fieldnames=['frame_idx', 'x1', 'y1', 'x2', 'y2', 'coco_label', 'coco_label_score', 'imagenet_label', 'imagenet_label_score']
+            fieldnames=['frame_idx', 'x1', 'y1', 'x2', 'y2', 'width', 'height', 'coco_label', 'coco_label_score', 'imagenet_label', 'imagenet_label_score']
         )
         csv_writer.writeheader()
         
@@ -164,6 +173,7 @@ def extract_bboxes(
             print(f'{os.path.basename(video_fp)} frame {frame_idx}/{num_frames}')
             
             frame = video[frame_idx]
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) # https://note.nkmk.me/en/python-opencv-bgr-rgb-cvtcolor/
             if frame is None: # sometimes the mmcv video reader messes up and returns one of the final few frames as None
                 continue
 
@@ -195,13 +205,15 @@ def extract_bboxes(
                     )                
 
             if visualize:
-                object_detector.show_result(frame, result, score_thr=score_thresh, out_file=os.path.join(bbox_img_dir, f'frame_{frame_idx}.jpg'))
-
+                object_detector.show_result(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR), result, score_thr=score_thresh, out_file=os.path.join(bbox_img_dir, f'frame_{frame_idx}.jpg'))
+            break
 
 start_time = dt.datetime.now()
 
-video_dir = '../data/hdvila/videos/test_videos'
-bbox_csv_dir = '../data/hdvila/videos/bboxes'
+root = '../data/hdvila/videos_hd/'
+
+video_dir = os.path.join(root, 'debug')
+bbox_csv_dir = os.path.join(root, 'debug_bboxes')
 
 video_fps = [os.path.join(video_dir, d) for d in os.listdir(video_dir) if d[-5:] != '.part']
 
@@ -209,18 +221,19 @@ video_fps = [os.path.join(video_dir, d) for d in os.listdir(video_dir) if d[-5:]
 config_file = 'configs/oln_box/faster_rcnn_r50_fpn_1x_coco.py'
 checkpoint_file = 'checkpoints/faster_rcnn_r50_fpn_1x_coco_20200130-047c8118.pth'
 object_detector = init_detector(config_file, checkpoint_file, device='cuda:0')
+print(object_detector.CLASSES)
 
 # imagenet classifier model
 # https://pytorch.org/vision/stable/models.html
-classifier_meta = ResNet50_Weights.IMAGENET1K_V2
+classifier_meta = ResNet152_Weights.IMAGENET1K_V2
 classifier_preproc = classifier_meta.transforms()
-bbox_classifier = resnet50(weights=classifier_meta)
+bbox_classifier = resnet152(weights=classifier_meta)
 bbox_classifier.eval()
 
 for vfp in video_fps:
     print('current video:', vfp)
     # visualization is slower. Only use for debugging
-    visualization_dir = f'../data/hdvila/videos/{os.path.basename(vfp)}+visualized'
+    visualization_dir = os.path.join(root, f'debug_visualizations/{os.path.basename(vfp)}+visualized')
 
     extract_bboxes(
         vfp,
@@ -236,6 +249,7 @@ for vfp in video_fps:
         sec_start_time=0
     )
     print()
+    break
 
 end_time = dt.datetime.now()
 with open(os.path.join(bbox_csv_dir, 'time.txt'), 'w') as time_file:

@@ -17,7 +17,7 @@ def download_yt(video_fp, out_root, overwrite):
     video_dir = os.path.join(out_root, 'test_videos')
     make_dir(video_dir, overwrite)
     
-    os.system('yt-dlp -o '+ os.path.join(video_dir, '%\(id\)s.%\(ext\)s') + ' -f bv*+ba[height=480]/bv*+ba' + ' --batch-file ' + video_fp)
+    os.system('yt-dlp -o '+ os.path.join(video_dir, '%\(id\)s.%\(ext\)s') + ' -f bv*+ba[height=1080]/bv*+ba' + ' --batch-file ' + video_fp)
     
     return [os.path.join(video_dir, f) for f in os.listdir(video_dir) if not os.path.isdir(f)]
 
