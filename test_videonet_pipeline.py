@@ -4,7 +4,7 @@ import os
 import csv
 import shutil
 import numpy as np
-from torchvision.models import resnet50, ResNet50_Weights, resnet152, ResNet152_Weights
+from torchvision.models import resnet50, ResNet50_Weights, resnet152, ResNet152_Weights, vit_l_16, ViT_L_16_Weights
 from torchvision.transforms.functional import to_pil_image
 import torch
 import matplotlib.pyplot as plt
@@ -22,30 +22,39 @@ def make_dir(path, overwrite):
         os.mkdir(path)
 
 
-def classify_bbox(img_list, model, preproc, class_list):
+def classify_bbox(img_list, model, preproc, class_list, batch_size=-1, frame_name=''):
     """
     img:        PIL Image - image to classify
     model:      pytorch pretrained imagenet classifier
     preproc:    pytorch pretrained imagenet classifier preprocessing pipeline
+    batch_size: maximum number of images in each iference batch.
+                If len(img_list) > batch_size, inference will be run sequentially on multiple batches
     model_meta: pytorch pretrained imagenet classifier weights/metadata
     """
 
     for i, img in enumerate(img_list):
         print(i + 2, img.size)
-        img.save(f'/home/vsuciu/data/tmp_imagenet_preproc_vis/{i+2}.png')
+        img.save(f'/home/vsuciu/data/tmp_imagenet_preproc_vis/{frame_name}+{i+2}.png')
+
+    if batch_size < 1:
+        batch_size = len(img_list)
+    
 
     # https://pytorch.org/vision/stable/models.html
-    preproc_img = torch.cat([preproc(img).unsqueeze(0) for img in img_list], dim=0)
+    preproc_img = torch.cat([preproc(img).cuda().unsqueeze(0) for img in img_list], dim=0)
     
-    
-    pred = model(preproc_img).squeeze(0).softmax(0)
-    class_id = pred.argmax(dim=-1)
-    # score = pred[class_id].item()]
-    class_name = class_list[class_id]
-    if type(class_name) == np.str_:
-        class_name = np.array([class_name])
+    class_name_batches = []
+    for b in range(0, len(img_list), batch_size):
+        
+        pred = model(preproc_img[b : min(b + batch_size, len(img_list)), :, :, :]).squeeze(0).softmax(0)
+        class_id = pred.argmax(dim=-1).cpu().detach()
+        # score = pred[class_id].item()]
+        class_name = class_list[class_id]
+        if type(class_name) == np.str_:
+            class_name = np.array([class_name])
+        class_name_batches.append(class_name)
 
-    return class_id, class_name
+    return class_id, np.concatenate(class_name_batches)
 
 
 def predict_bboxes(model, frame, score_thresh):
@@ -73,6 +82,24 @@ def predict_bboxes(model, frame, score_thresh):
 
     return result, bboxes, labels, scores
 
+def expand_bboxes(bboxes, factor, frame_shape):
+    # bboxes row format: x1, y1, x2, y2, _
+    x1 = bboxes[:, 0]
+    y1 = bboxes[:, 1]
+    x2 = bboxes[:, 2]
+    y2 = bboxes[:, 3]
+    frame_x_size = frame_shape[1]
+    frame_y_size = frame_shape[0]
+
+    x_sizes = x2 - x1
+    y_sizes = y2 - y1
+    grow_len_x = (x_sizes * factor - x_sizes).astype(np.int32) // 2
+    grow_len_y = (y_sizes * factor - y_sizes).astype(np.int32) // 2
+
+    bboxes[:, 0] = np.maximum(x1 - grow_len_x, 0)
+    bboxes[:, 1] = np.maximum(y1 - grow_len_y, 0)
+    bboxes[:, 2] = np.minimum(x2 + grow_len_x, frame_x_size)
+    bboxes[:, 3] = np.minimum(y2 + grow_len_y, frame_y_size)
 
 
 def write_bbox_to_file(csv_writer, frame_idx, bbox, coco_label, coco_score, imgnet_label, imgnet_score):
@@ -124,6 +151,8 @@ def extract_bboxes(
     classifier_meta,
     classifier_preproc,
     score_thresh=0.3,
+    bbox_expantion_factor=1.2,
+    classifier_batch_size=4,
     bbox_img_dir='',
     max_frames=None,
     sec_between_frames=0,
@@ -182,13 +211,22 @@ def extract_bboxes(
             if len(bboxes) == 0: # no objects detected
                 write_bbox_to_file(csv_writer, frame_idx, -np.ones((5,)), -1, -1, -1, -1)
             else:
+                expand_bboxes(bboxes, bbox_expantion_factor, frame.shape)
                 # get image crops of each bounding box
                 patches = mmcv.imcrop(frame, bboxes[:, :4])
 
                 # classify bounding box patches using imagenet classifier
                 pil_patches = [to_pil_image(patch) for patch in patches]
-                imgnet_class_ids, imgnet_class_names = classify_bbox(pil_patches, bbox_classifier, classifier_preproc, imgnet_class_list)
-
+                imgnet_class_ids, imgnet_class_names = classify_bbox(
+                    pil_patches,
+                    bbox_classifier,
+                    classifier_preproc,
+                    imgnet_class_list,
+                    batch_size=classifier_batch_size,
+                    frame_name=f"{os.path.basename(video_fp).split('.')[0]}+{frame_idx}"
+                )
+                print(imgnet_class_names)
+                print(len(imgnet_class_names))
                 # print(imgnet_class_names.shape)
                 # if 'p' in imgnet_class_names:
                 #     print(bboxes, labels, scores, imgnet_class_names)
@@ -225,9 +263,12 @@ print(object_detector.CLASSES)
 
 # imagenet classifier model
 # https://pytorch.org/vision/stable/models.html
-classifier_meta = ResNet152_Weights.IMAGENET1K_V2
+
+# classifier_meta = ViT_L_16_Weights.IMAGENET1K_SWAG_E2E_V1
+classifier_meta = ResNet50_Weights.IMAGENET1K_V2
 classifier_preproc = classifier_meta.transforms()
-bbox_classifier = resnet152(weights=classifier_meta)
+# bbox_classifier = vit_l_16(weights=classifier_meta).cuda()
+bbox_classifier = resnet50(weights=classifier_meta).cuda()
 bbox_classifier.eval()
 
 for vfp in video_fps:
@@ -243,13 +284,15 @@ for vfp in video_fps:
         classifier_meta,
         classifier_preproc,
         score_thresh=0.1,
-        bbox_img_dir='',
+        bbox_expantion_factor=1,
+        classifier_batch_size=-1,
+        bbox_img_dir=visualization_dir,
         max_frames=100,
         sec_between_frames=2,
         sec_start_time=0
     )
     print()
-    break
+    
 
 end_time = dt.datetime.now()
 with open(os.path.join(bbox_csv_dir, 'time.txt'), 'w') as time_file:

@@ -126,7 +126,6 @@ dependencies:
     - kwarray==0.6.5
     - matplotlib==3.6.2
     - mccabe==0.7.0
-    - mmcv-full==1.7.0
     - mmlvis==10.5.3
     - mmpycocotools==12.0.3
     - mutagen==1.46.0
