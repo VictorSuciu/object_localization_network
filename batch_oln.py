@@ -65,6 +65,8 @@ print(frames[0].shape)
 
 batch_frames = np.stack(frames, axis=0)
 
+# this doesn't work with a fourth batch dimension because the preprocessing
+# steps expect a 3D shape of (H, W, 3). Will have to try something else.
 result, bboxes, labels, scores = predict_bboxes(
     object_detector,
     batch_frames[1],
@@ -72,3 +74,4 @@ result, bboxes, labels, scores = predict_bboxes(
 )
 
 print(labels)
+
